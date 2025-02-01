@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: spicedb-config
+data:
+  preshared_key: dGVzdGtleQ==
+  # postgres://spicedb_migrator_dev_jack@host.docker.internal:5432/spicedb_operator_sandbox
+  datastore_uri: cG9zdGdyZXM6Ly9zcGljZWRiX21pZ3JhdG9yX2Rldl9qYWNrQGhvc3QuZG9ja2VyLmludGVybmFsOjU0MzIvc3BpY2VkYl9vcGVyYXRvcl9zYW5kYm94
+type: Opaque
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spicedb-schema
+data:
+  schema.zed: |
+    /** user represents a registered user's account in our application */
+    definition user {}
+    
+    /** document represents a document with access control */
+    definition document {
+      /** reader indicates that the user is a reader on the document */
+      relation reader: user
+    }
+---
+apiVersion: authzed.com/v1alpha1
+kind: SpiceDBCluster
+metadata:
+  name: test-cluster
+spec:
+  configMapRef: spicedb-schema
+  version: "v1.39.1"
+  channel: "stable"
+  config:
+    datastoreEngine: postgres
+    logLevel: warn
+    grpcShutdownGracePeriod: 1s
+    replicas: 2
+    skipReleaseCheck: true
+    telemetryEndpoint: ""
+  secretName: spicedb-config
+  schemaConfigMapName: spicedb-schema
+

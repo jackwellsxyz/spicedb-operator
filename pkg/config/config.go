@@ -163,10 +163,11 @@ type SpiceConfig struct {
 	ProjectLabels                  bool
 	ProjectAnnotations             bool
 	Passthrough                    map[string]string
+	Schema                         string
 }
 
 // NewConfig checks that the values in the config + the secret are sane
-func NewConfig(cluster *v1alpha1.SpiceDBCluster, globalConfig *OperatorConfig, secret *corev1.Secret, resources openapi.Resources) (*Config, Warning, error) {
+func NewConfig(cluster *v1alpha1.SpiceDBCluster, globalConfig *OperatorConfig, secret *corev1.Secret, schemaConfigMap *corev1.ConfigMap, resources openapi.Resources) (*Config, Warning, error) {
 	if cluster.Spec.Config == nil {
 		return nil, nil, fmt.Errorf("couldn't parse empty config")
 	}
@@ -193,6 +194,22 @@ func NewConfig(cluster *v1alpha1.SpiceDBCluster, globalConfig *OperatorConfig, s
 		SpiceDBCmd:                   spiceDBCmdKey.pop(config),
 		LogLevel:                     logLevelKey.pop(config),
 	}
+
+	// Add schema from configmap if specified
+	if len(cluster.Spec.SchemaConfigMapName) > 0 {
+		if schemaConfigMap == nil {
+			warnings = append(errs, fmt.Errorf("schema configmap %q not found", cluster.Spec.SchemaConfigMapName))
+		} else {
+			// Look for schema in configmap data
+			schema, ok := schemaConfigMap.Data["schema.zed"]
+			if !ok {
+				warnings = append(errs, fmt.Errorf("schema key not found in configmap %q", cluster.Spec.SchemaConfigMapName))
+			} else {
+				spiceConfig.Schema = schema
+			}
+		}
+	}
+
 	migrationConfig := MigrationConfig{
 		MigrationLogLevel:      migrationLogLevelKey.pop(config),
 		SpannerCredsSecretRef:  spannerCredentialsKey.pop(config),

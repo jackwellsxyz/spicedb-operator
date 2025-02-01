@@ -28,9 +28,10 @@ type ValidateConfigHandler struct {
 func (c *ValidateConfigHandler) Handle(ctx context.Context) {
 	cluster := CtxCluster.MustValue(ctx)
 	secret := CtxSecret.Value(ctx)
+	schemaConfigMap := CtxSchemaConfigMap.Value(ctx)
 	operatorConfig := CtxOperatorConfig.MustValue(ctx)
 
-	validatedConfig, warning, err := config.NewConfig(cluster, operatorConfig, secret, c.resources)
+	validatedConfig, warning, err := config.NewConfig(cluster, operatorConfig, secret, schemaConfigMap, c.resources)
 	if err != nil {
 		failedCondition := v1alpha1.NewInvalidConfigCondition(CtxSecretHash.Value(ctx), err)
 		if existing := cluster.FindStatusCondition(v1alpha1.ConditionValidatingFailed); existing != nil && existing.Message == failedCondition.Message {

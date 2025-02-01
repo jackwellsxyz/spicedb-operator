@@ -85,6 +85,12 @@ spec:
                 description: Config values to be passed to the cluster
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
+              schemaConfigMapName:
+                description: |-
+                  schemaConfigMapName points to a configmap (in the same namespace) that contains
+                  a valid SpiceDB policy schema in a key called `schema.yaml`. If present, this
+                  schema will be written to the SpiceDB cluster whenever it is updated.
+                type: string
               patches:
                 description: |-
                   Patches is a list of patches to apply to generated resources.
@@ -238,6 +244,11 @@ spec:
                 description: Phase is the currently running phase (used for phased
                   migrations)
                 type: string
+              schemaHash:
+                  description: |-
+                    schemaHash is a digest of the last applied schema
+                    to the SpiceDB cluster.
+                  type: string
               secretHash:
                 description: SecretHash is a digest of the last applied secret
                 type: string

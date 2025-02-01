@@ -66,6 +66,7 @@ import (
 // +kubebuilder:rbac:groups="",resources=endpoints,verbs=get;list;watch
 // +kubebuilder:rbac:groups="rbac.authorization.k8s.io",resources=roles,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="rbac.authorization.k8s.io",resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 
 func init() {
 	utilruntime.Must(v1alpha1.AddToScheme(scheme.Scheme))
@@ -182,6 +183,7 @@ func NewController(ctx context.Context, registry *typed.Registry, dclient dynami
 			batchv1.SchemeGroupVersion.WithResource("jobs"),
 			rbacv1.SchemeGroupVersion.WithResource("roles"),
 			rbacv1.SchemeGroupVersion.WithResource("rolebindings"),
+			corev1.SchemeGroupVersion.WithResource("configmaps"),
 		} {
 			inf := externalInformerFactory.ForResource(gvr).Informer()
 			if err := inf.AddIndexers(cache.Indexers{metadata.OwningClusterIndex: metadata.GetClusterKeyFromMeta}); err != nil {
@@ -220,6 +222,7 @@ func NewController(ctx context.Context, registry *typed.Registry, dclient dynami
 	fileInformerFactory.WaitForCacheSync(ctx.Done())
 
 	// Build mainHandler handler
+
 	mw := middleware.NewHandlerLoggingMiddleware(4)
 	chain := middleware.ChainWithMiddleware(mw)
 	parallel := middleware.ParallelWithMiddleware(mw)
@@ -237,6 +240,7 @@ func NewController(ctx context.Context, registry *typed.Registry, dclient dynami
 	c.mainHandler = chain(
 		c.pauseCluster,
 		c.secretAdopter,
+		c.schemaConfigMapAdopter,
 		c.checkConfigChanged,
 		c.validateConfig,
 		parallel(
@@ -259,9 +263,17 @@ func NewController(ctx context.Context, registry *typed.Registry, dclient dynami
 			).Handler(HandlerMigrationRunKey),
 			waitForMigrationsChain,
 		).Builder(),
+		c.applySchema,
 	).Handler("controller")
 
 	return &c, nil
+}
+
+func (c *Controller) DebugPrintHandler(next ...handler.Handler) handler.Handler {
+	return handler.NewHandlerFromFunc(func(ctx context.Context) {
+		fmt.Println("DebugPrintHandler")
+		//handler.Handlers(next).MustOne().Handle(ctx)
+	}, "debugPrintHandler")
 }
 
 func (c *Controller) loadConfig(path string) {
@@ -357,6 +369,10 @@ func (c *Controller) syncOwnedResource(ctx context.Context, gvr schema.GroupVers
 		Name:      cluster.Spec.SecretRef,
 		Namespace: cluster.Namespace,
 	})
+	ctx = CtxSchemaConfigMapNN.WithValue(ctx, types.NamespacedName{
+		Name:      cluster.Spec.SchemaConfigMapName,
+		Namespace: cluster.Namespace,
+	})
 
 	c.configLock.RLock()
 	cfg := c.config.Copy()
@@ -427,7 +443,7 @@ func (c *Controller) ensureDeployment(next ...handler.Handler) handler.Handler {
 	})
 }
 
-func (c *Controller) cleanupJob(...handler.Handler) handler.Handler {
+func (c *Controller) cleanupJob(next ...handler.Handler) handler.Handler {
 	return handler.NewTypeHandler(&JobCleanupHandler{
 		registry: c.Registry,
 		getJobs: func(ctx context.Context) []*batchv1.Job {
@@ -472,6 +488,7 @@ func (c *Controller) pauseCluster(next ...handler.Handler) handler.Handler {
 }
 
 func (c *Controller) selfPauseCluster(...handler.Handler) handler.Handler {
+	println("selfPauseCluster.handle")
 	return NewSelfPauseHandler(c.Patch, c.PatchStatus)
 }
 
@@ -519,6 +536,67 @@ func (c *Controller) secretAdopter(next ...handler.Handler) handler.Handler {
 		}
 		handler.Handlers(next).MustOne().Handle(ctx)
 	}, "adoptSecret")
+}
+
+func (c *Controller) schemaConfigMapAdopter(next ...handler.Handler) handler.Handler {
+	configMapsGVR := corev1.SchemeGroupVersion.WithResource("configmaps")
+	return handler.NewHandlerFromFunc(func(ctx context.Context) {
+		NewSchemaConfigMapAdoptionHandler(
+			c.Recorder,
+			func(ctx context.Context) (*corev1.ConfigMap, error) {
+				return typed.MustListerForKey[*corev1.ConfigMap](
+					c.Registry,
+					typed.NewRegistryKey(DependentFactoryKey(CtxCacheNamespace.Value(ctx)),
+						configMapsGVR),
+				).ByNamespace(CtxSchemaConfigMapNN.MustValue(ctx).Namespace).Get(CtxSchemaConfigMapNN.MustValue(ctx).Name)
+			},
+			func(ctx context.Context, err error) {
+				cluster := CtxCluster.MustValue(ctx)
+				status := &v1alpha1.SpiceDBCluster{
+					TypeMeta: metav1.TypeMeta{
+						Kind:       v1alpha1.SpiceDBClusterKind,
+						APIVersion: v1alpha1.SchemeGroupVersion.String(),
+					},
+					ObjectMeta: metav1.ObjectMeta{Namespace: cluster.Namespace, Name: cluster.Name},
+					Status:     *cluster.Status.DeepCopy(),
+				}
+				status.Status.ObservedGeneration = cluster.GetGeneration()
+				status.SetStatusCondition(v1alpha1.NewMissingConfigMapCondition(types.NamespacedName{
+					Namespace: cluster.Namespace,
+					Name:      cluster.Spec.SchemaConfigMapName,
+				}))
+				if err := c.PatchStatus(ctx, status); err != nil {
+					QueueOps.RequeueAPIErr(ctx, err)
+				}
+				// keep checking to see if the configmap is added
+				QueueOps.RequeueErr(ctx, err)
+			},
+			typed.MustIndexerForKey[*corev1.ConfigMap](
+				c.Registry,
+				typed.NewRegistryKey(DependentFactoryKey(CtxCacheNamespace.Value(ctx)),
+					configMapsGVR),
+			),
+			func(ctx context.Context, cm *applycorev1.ConfigMapApplyConfiguration, options metav1.ApplyOptions) (*corev1.ConfigMap, error) {
+				return c.kclient.CoreV1().ConfigMaps(*cm.Namespace).Apply(ctx, cm, options)
+			},
+			func(ctx context.Context, nn types.NamespacedName) error {
+				_, err := c.kclient.CoreV1().ConfigMaps(nn.Namespace).Get(ctx, nn.Name, metav1.GetOptions{})
+				return err
+			},
+			handler.Handlers(next).MustOne(),
+		).Handle(ctx)
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return
+		}
+		handler.Handlers(next).MustOne().Handle(ctx)
+	}, "adoptConfigMap")
+}
+
+func (c *Controller) applySchema(next ...handler.Handler) handler.Handler {
+	return handler.NewTypeHandler(&SchemaApplyHandler{
+		patchStatus: c.PatchStatus,
+		next:        handler.Handlers(next).MustOne(),
+	})
 }
 
 func (c *Controller) checkConfigChanged(next ...handler.Handler) handler.Handler {
@@ -743,4 +821,18 @@ func (c *Controller) ensureService(next ...handler.Handler) handler.Handler {
 		}
 		handler.Handlers(next).MustOne().Handle(ctx)
 	}, "ensureService")
+}
+
+type presharedKeyCredentials struct {
+	key string
+}
+
+func (c *presharedKeyCredentials) GetRequestMetadata(ctx context.Context, uri ...string) (map[string]string, error) {
+	return map[string]string{
+		"Authorization": "Bearer " + c.key,
+	}, nil
+}
+
+func (c *presharedKeyCredentials) RequireTransportSecurity() bool {
+	return false
 }

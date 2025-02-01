@@ -27,6 +27,7 @@ type DeploymentHandler struct {
 }
 
 func (m *DeploymentHandler) Handle(ctx context.Context) {
+	fmt.Println("Deployment handler start")
 	// TODO: unconditional status change can be a separate handler
 	currentStatus := CtxCluster.MustValue(ctx)
 	// remove migrating condition if present and set the current migration hash
@@ -151,5 +152,6 @@ func (m *DeploymentHandler) Handle(ctx context.Context) {
 		}
 	}
 
+	fmt.Println("Deployment handler is finished, next handler is ", m.next)
 	m.next.Handle(ctx)
 }

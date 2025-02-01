@@ -24,7 +24,10 @@ const (
 	ConditionTypeRolling             = "RollingDeployment"
 	ConditionTypeRolloutError        = "RolloutError"
 
-	ConditionReasonMissingSecret = "MissingSecret"
+	ConditionReasonMissingSecret  = "MissingSecret"
+	ConditionTypeMissingConfigMap = "MissingConfigMap"
+	ConditionTypeInvalidConfigMap = "InvalidConfigMap"
+	ConditionTypeConfigApplied    = "ConfigApplied"
 )
 
 func NewValidatingConfigCondition(secretHash string) metav1.Condition {
@@ -106,3 +109,44 @@ func NewPodErrorCondition(message string) metav1.Condition {
 		Message:            message,
 	}
 }
+
+func NewMissingConfigMapCondition(nn types.NamespacedName) metav1.Condition {
+	return metav1.Condition{
+		Type:               ConditionTypeMissingConfigMap,
+		Status:             metav1.ConditionTrue,
+		Reason:             "ConfigMapMissing",
+		Message:            fmt.Sprintf("ConfigMap %s not found", nn.String()),
+		LastTransitionTime: metav1.Now(),
+	}
+}
+
+func NewInvalidConfigMapCondition(hash string, err error) metav1.Condition {
+	return metav1.Condition{
+		Type:               ConditionTypeInvalidConfigMap,
+		Status:             metav1.ConditionTrue,
+		Reason:             "ConfigMapInvalid",
+		Message:            fmt.Sprintf("Error validating ConfigMap with hash %q: %v", hash, err),
+		LastTransitionTime: metav1.Now(),
+	}
+}
+
+//
+//func NewConfigAppliedCondition() metav1.Condition {
+//	return metav1.Condition{
+//		Type:               ConditionTypeConfigApplied,
+//		Status:             metav1.ConditionTrue,
+//		Reason:             "ConfigApplied",
+//		Message:            "Configuration has been successfully applied",
+//		LastTransitionTime: metav1.Now(),
+//	}
+//}
+//
+//func NewSchemaApplyFailedCondition(err error) metav1.Condition {
+//	return metav1.Condition{
+//		Type:               ConditionTypeConfigApplied,
+//		Status:             metav1.ConditionFalse,
+//		Reason:             "SchemaApplyFailed",
+//		Message:            fmt.Sprintf("Failed to apply policy schema: %v", err),
+//		LastTransitionTime: metav1.Now(),
+//	}
+//}

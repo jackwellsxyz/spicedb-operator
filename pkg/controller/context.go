@@ -29,4 +29,7 @@ var (
 	CtxCurrentMigrationJob    = typedctx.WithDefault[*batchv1.Job](nil)
 	CtxCurrentSpiceDeployment = typedctx.WithDefault[*appsv1.Deployment](nil)
 	CtxSelfPauseObject        = typedctx.WithDefault(new(v1alpha1.SpiceDBCluster))
+	CtxSchemaConfigMapNN      = typedctx.WithDefault(types.NamespacedName{})
+	CtxSchemaConfigMap        = typedctx.WithDefault[*corev1.ConfigMap](nil)
+	CtxSchemaConfigMapHash    = typedctx.WithDefault("")
 )

@@ -98,6 +98,8 @@ type ClusterSpec struct {
 	// in the list take precedence over earlier ones.
 	// +optional
 	Patches []Patch `json:"patches,omitempty"`
+
+	SchemaConfigMapName string `json:"schemaConfigMapName,omitempty"`
 }
 
 // Patch represents a single change to apply to generated manifests
@@ -133,6 +135,9 @@ type ClusterStatus struct {
 
 	// SecretHash is a digest of the last applied secret
 	SecretHash string `json:"secretHash,omitempty"`
+
+	// Hash of the last successfully applied schema via the operator (if any)
+	SchemaHash string `json:"schemaHash,omitempty"`
 
 	// Image is the image that is or will be used for this cluster
 	Image string `json:"image,omitempty"`

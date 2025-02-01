@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 
 	"golang.org/x/exp/slices"
 	corev1 "k8s.io/api/core/v1"
@@ -31,6 +32,7 @@ type MigrationCheckHandler struct {
 }
 
 func (m *MigrationCheckHandler) Handle(ctx context.Context) {
+	fmt.Println("migration check handler")
 	migrationHash := CtxMigrationHash.MustValue(ctx)
 
 	hasJob := false
@@ -76,6 +78,7 @@ func (m *MigrationCheckHandler) Handle(ctx context.Context) {
 		return
 	}
 
+	fmt.Println("deployment is up to date, next deployment handler is ", m.nextDeploymentHandler)
 	// if the deployment is up to date, continue
 	m.nextDeploymentHandler.Handle(ctx)
 }

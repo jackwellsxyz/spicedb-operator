@@ -114,6 +114,11 @@ spec:
                   config for the cluster like passwords, credentials, etc.
                   If the secret is omitted, one will be generated
                 type: string
+              schemaConfigMapName:
+                description: |-
+                  ConfigMapName containing the schema.zed file to be written into the 
+                  SpiceDB cluster
+                type: string
               version:
                 description: |-
                   Version is the name of the version of SpiceDB that will be run.

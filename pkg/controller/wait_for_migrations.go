@@ -41,6 +41,7 @@ func (m *WaitForMigrationsHandler) Handle(ctx context.Context) {
 	// if done, go to the nextDeploymentHandler step
 	if jobConditionHasStatus(job, batchv1.JobComplete, corev1.ConditionTrue) {
 		m.recorder.Eventf(CtxCluster.MustValue(ctx), corev1.EventTypeNormal, EventMigrationsComplete, "Migrations completed for %s", CtxConfig.MustValue(ctx).TargetSpiceDBImage)
+		fmt.Println("Next deployment handler", m.nextDeploymentHandler)
 		m.nextDeploymentHandler.Handle(ctx)
 		return
 	}
